@@ -6,6 +6,79 @@ const Borrow = require("../models/Borrow");
 const Review = require("../models/Review");
 const auth = require("../middleware/auth");
 
+router.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError || error.message === "Only image files are allowed") {
+    return res.status(400).json({ message: error.message });
+  }
+  next(error);
+});
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, path.join(__dirname, "..", "uploads"));
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    cb(null, `toy-${uniqueSuffix}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype && file.mimetype.startsWith("image/")) {
+      return cb(null, true);
+    }
+    cb(new Error("Only image files are allowed"));
+  },
+});
+
+function parseAgeRange(body) {
+  if (body.ageRange) {
+    try {
+      const parsed = JSON.parse(body.ageRange);
+      if (parsed && Number.isFinite(Number(parsed.min)) && Number.isFinite(Number(parsed.max))) {
+        return { min: Number(parsed.min), max: Number(parsed.max) };
+      }
+    } catch (_) {
+      // Fall through to ageMin/ageMax parsing.
+    }
+  }
+
+  if (body.ageMin !== undefined || body.ageMax !== undefined) {
+    if (body.ageMin === "" || body.ageMax === "") return undefined;
+    const min = Number(body.ageMin);
+    const max = Number(body.ageMax);
+    if (Number.isFinite(min) && Number.isFinite(max)) {
+      return { min, max };
+    }
+  }
+
+  return undefined;
+}
+
+function buildToyPayload(req, body, file, { includeStatus = false } = {}) {
+  const payload = {};
+
+  if (body.name !== undefined) payload.name = body.name;
+  if (body.category !== undefined) payload.category = body.category;
+  if (body.description !== undefined) payload.description = body.description;
+  if (body.condition !== undefined) payload.condition = body.condition;
+  if (includeStatus && body.status !== undefined) payload.status = body.status;
+
+  const ageRange = parseAgeRange(body);
+  if (ageRange !== undefined) payload.ageRange = ageRange;
+
+  if (file) {
+    payload.photo = `${req.protocol}://${req.get("host")}/uploads/${file.filename}`;
+  } else if (body.photo !== undefined) {
+    payload.photo = body.photo;
+  }
+
+  return payload;
+}
 
 // GET /api/toys — Browse all available toys
 router.get("/", auth, async (req, res) => {
@@ -147,79 +220,6 @@ router.delete("/:id", auth, async (req, res) => {
   }
 });
 
-router.use((error, req, res, next) => {
-  if (error instanceof multer.MulterError || error.message === "Only image files are allowed") {
-    return res.status(400).json({ message: error.message });
-  }
-  next(error);
-});
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, "..", "uploads"));
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    const ext = path.extname(file.originalname || "").toLowerCase();
-    cb(null, `toy-${uniqueSuffix}${ext}`);
-  },
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype && file.mimetype.startsWith("image/")) {
-      return cb(null, true);
-    }
-    cb(new Error("Only image files are allowed"));
-  },
-});
-
-function parseAgeRange(body) {
-  if (body.ageRange) {
-    try {
-      const parsed = JSON.parse(body.ageRange);
-      if (parsed && Number.isFinite(Number(parsed.min)) && Number.isFinite(Number(parsed.max))) {
-        return { min: Number(parsed.min), max: Number(parsed.max) };
-      }
-    } catch (_) {
-      // Fall through to ageMin/ageMax parsing.
-    }
-  }
-
-  if (body.ageMin !== undefined || body.ageMax !== undefined) {
-    if (body.ageMin === "" || body.ageMax === "") return undefined;
-    const min = Number(body.ageMin);
-    const max = Number(body.ageMax);
-    if (Number.isFinite(min) && Number.isFinite(max)) {
-      return { min, max };
-    }
-  }
-
-  return undefined;
-}
-
-function buildToyPayload(req, body, file, { includeStatus = false } = {}) {
-  const payload = {};
-
-  if (body.name !== undefined) payload.name = body.name;
-  if (body.category !== undefined) payload.category = body.category;
-  if (body.description !== undefined) payload.description = body.description;
-  if (body.condition !== undefined) payload.condition = body.condition;
-  if (includeStatus && body.status !== undefined) payload.status = body.status;
-
-  const ageRange = parseAgeRange(body);
-  if (ageRange !== undefined) payload.ageRange = ageRange;
-
-  if (file) {
-    payload.photo = `${req.protocol}://${req.get("host")}/uploads/${file.filename}`;
-  } else if (body.photo !== undefined) {
-    payload.photo = body.photo;
-  }
-
-  return payload;
-}
 
 
 module.exports = router;
